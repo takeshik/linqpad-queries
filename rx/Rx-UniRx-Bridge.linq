@@ -96,6 +96,6 @@ public static class UniRxBridgeExtensions
         => new SystemObservable<TSource>(source);
 
     public static UniRx.IObservable<TSource> AsUniRxObservable<TSource>
-    (this System.IObservable<TSource> source)
+        (this System.IObservable<TSource> source)
         => new UniRxObservable<TSource>(source);
 }
