@@ -1,8 +1,9 @@
 <Query Kind="Program">
   <Namespace>System.Drawing</Namespace>
+  <Namespace>System.Threading.Tasks</Namespace>
 </Query>
 
-void Main()
+async Task Main()
 {
     var destinationPath = @"TODO: 画像の保存先ディレクトリのパスを指定";
     var sourcePath = Environment.ExpandEnvironmentVariables(

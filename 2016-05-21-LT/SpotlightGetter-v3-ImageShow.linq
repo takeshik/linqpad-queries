@@ -1,8 +1,9 @@
 <Query Kind="Program">
   <Namespace>System.Drawing</Namespace>
+  <Namespace>System.Threading.Tasks</Namespace>
 </Query>
 
-void Main()
+async Task Main()
 {
     var destinationPath = @"TODO: 画像の保存先ディレクトリのパスを指定";
     var sourcePath = Environment.ExpandEnvironmentVariables(
@@ -111,12 +112,13 @@ public class ProgressBar : Util.ProgressBar
 
 public class AppendableDumpContainer : DumpContainer
 {
+    private DumpContainer _head;
+    
     private DumpContainer _current;
 
     public AppendableDumpContainer()
     {
-        this._current = new DumpContainer();
-        this.Content = this._current;
+        this._head = this._current = new DumpContainer();
     }
 
     public void Append(object obj)
@@ -124,5 +126,6 @@ public class AppendableDumpContainer : DumpContainer
         var dc = new DumpContainer();
         this._current.Content = Util.VerticalRun(obj, dc);
         this._current = dc;
+        this.Content = this._head;
     }
 }
