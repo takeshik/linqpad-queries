@@ -1,6 +1,13 @@
 <Query Kind="Program">
+  <Reference>&lt;RuntimeDirectory&gt;\Accessibility.dll</Reference>
+  <Reference>&lt;RuntimeDirectory&gt;\System.Configuration.dll</Reference>
+  <Reference>&lt;RuntimeDirectory&gt;\System.Deployment.dll</Reference>
+  <Reference>&lt;RuntimeDirectory&gt;\System.Runtime.Serialization.Formatters.Soap.dll</Reference>
+  <Reference>&lt;RuntimeDirectory&gt;\System.Security.dll</Reference>
+  <Reference>&lt;RuntimeDirectory&gt;\System.Windows.Forms.dll</Reference>
   <NuGetReference>Microsoft.CodeAnalysis.CSharp.Scripting</NuGetReference>
   <NuGetReference>System.ValueTuple</NuGetReference>
+  <Namespace>LINQPad.Controls</Namespace>
   <Namespace>Microsoft.CodeAnalysis</Namespace>
   <Namespace>Microsoft.CodeAnalysis.CSharp</Namespace>
   <Namespace>Microsoft.CodeAnalysis.CSharp.Scripting</Namespace>
@@ -12,8 +19,6 @@
   <Namespace>System.Linq</Namespace>
   <Namespace>System.Reflection</Namespace>
   <Namespace>System.Text</Namespace>
-  <Namespace>LINQPad.Controls</Namespace>
-  <Namespace>LINQPad.ObjectModel</Namespace>
 </Query>
 
 /*
@@ -24,78 +29,185 @@
  *   RoslynQuoter is licensed under the Apache License, version 2.0.
  */
 
+object _gate = new object();
 SelectBox _nodeKind;
 CheckBox _openNewLine;
 CheckBox _closeNewLine;
 CheckBox _preserveWhitespace;
 CheckBox _keepRedundant;
-TextBox _syntaxFactoryId;
+DataListBox _syntaxFactoryId;
 TextArea _input;
 DumpContainer _output;
-string _code;
+DumpContainer _commands;
+string _result;
 
 void Main()
 {
-    _nodeKind = new SelectBox(Enum.GetNames(typeof(NodeKind)), 0, _ => Exec());
-    _openNewLine = new CheckBox("( on a new line", false, _ => Exec());
-    _closeNewLine = new CheckBox(") on a new line", false, _ => Exec());
-    _preserveWhitespace = new CheckBox("Preserve original whitespace", false, _ => Exec());
-    _keepRedundant = new CheckBox("Keep redundant calls", false, _ => Exec());
-    _syntaxFactoryId = new TextBox("", "8em", onTextInput: _ => Exec());
-    
-    _input = new TextArea("", 0, onTextInput: _ => Exec());
-    _input.Styles["font-family"] = "Consolas";
-    _input.Styles["font-size"] = "1.1em";
-    _input.Styles["width"] = "95%";
-    _output = new DumpContainer() { Style = "padding: 1em" };
+    _nodeKind = new SelectBox(new[] { "(auto)", "CompilationUnit", "Statement", "Expression", }, 0, _ => Exec(_input.Text));
+    _openNewLine = new CheckBox("( on a new line", false, _ => Exec(_input.Text));
+    _closeNewLine = new CheckBox(") on a new line", false, _ => Exec(_input.Text));
+    _preserveWhitespace = new CheckBox("Preserve original whitespace", false, _ => Exec(_input.Text));
+    _keepRedundant = new CheckBox("Keep redundant calls", false, _ => Exec(_input.Text));
+    _syntaxFactoryId = new DataListBox(new[] { "(using static)", "SyntaxFactory", "S" }) { Width = "8em" };
+    _syntaxFactoryId.TextInput += (_, __) => Exec(_input.Text);
+    _syntaxFactoryId.HtmlElement.SetAttribute("placeholder", "(using static)");
 
-    Util.HorizontalRun(true,
-        "RoslynQuoter is open-source at",
-        new Hyperlinq("https://github.com/KirillOsenkov/RoslynQuoter")
-    ).Dump();
-    Util.RawHtml("<hr />").Dump();
-    Util.HorizontalRun(true,
+    _input = new TextArea("", 0, onTextInput: x =>
+    {
+        string input;
+        bool hasQuoted = false;
+        do
+        {
+            input = x.Text;
+            hasQuoted = Exec(x.Text);
+        } while (hasQuoted && x.Text != input);
+    })
+    {
+        Styles =
+        {
+            ["font-family"] = "Consolas",
+            ["font-size"] = "1.1em",
+            ["width"] = "98%",
+        },
+        IsMultithreaded = true,
+    };
+    _output = new DumpContainer() { Style = "padding: 1em" };
+    _commands = new DumpContainer(Util.WordRun(false,
+        "This code uses ",
+        new Hyperlinq("https://roslynquoter.azurewebsites.net/", "RoslynQuoter"),
+        " (open-source at ",
+        new Hyperlinq("https://github.com/KirillOsenkov/RoslynQuoter"),
+        " ― ",
+        new Hyperlinq("https://github.com/KirillOsenkov/RoslynQuoter/blob/master/LICENSE", "Apache License"),
+        ")."
+    ));
+
+    Util.WordRun(true,
         _nodeKind,
+        "",
         _openNewLine,
         _closeNewLine,
         _preserveWhitespace,
         _keepRedundant,
-        "Alias for SyntaxFactory:",
+        "Import SyntaxFactory as:",
         _syntaxFactoryId
     ).Dump();
     _input.Dump();
-    Util.HorizontalRun(true,
-        new Button("Open in new panel", _ => DumpPanel()),
-        new Button("Open as new query", _ => OpenQuery())
-    ).Dump();
+    _commands.Dump();
     _output.Dump();
 }
 
-void Exec()
+bool Exec(string input)
 {
+    var syntaxFactoryId = _syntaxFactoryId.Text == "(using static)" ? "" : _syntaxFactoryId.Text;
+    
+    string SyntaxFactoryMethod(string text)
+    {
+        if (!string.IsNullOrEmpty(syntaxFactoryId))
+        {
+            text = $"{_syntaxFactoryId.Text}.{text}";
+        }
+
+        return text;
+    }
+
     try
     {
+        var entered = false;
+        Monitor.TryEnter(_gate, ref entered);
+        if (!entered) return false;
+
+        _commands.Content = Util.Metatext($"Quoting...");
         var quoter = new Quoter()
         {
             OpenParenthesisOnNewLine = _openNewLine.Checked,
             ClosingParenthesisOnNewLine = _closeNewLine.Checked,
             UseDefaultFormatting = !_preserveWhitespace.Checked,
             RemoveRedundantModifyingCalls = !_keepRedundant.Checked,
-            SyntaxFactorySymbol = _syntaxFactoryId.Text,
+            SyntaxFactorySymbol = syntaxFactoryId,
         };
 
-        _code = quoter.QuoteText(_input.Text, (NodeKind)Enum.Parse(typeof(NodeKind), (string)_nodeKind.SelectedOption));
-        _output.Content = Util.WithStyle(_code, "font-family: Consolas; font-size: 1.1em");
+        var sw = Stopwatch.StartNew();
+        NodeKind kind;
+        SyntaxNode node;
+        switch (_nodeKind.SelectedOption)
+        {
+            case "(auto)":
+                bool MayHaveFailed(SyntaxNode n)
+                    => n.DescendantNodesAndTokensAndSelf().Any(x => x.IsMissing && !x.IsKind(SyntaxKind.SemicolonToken))
+                        || node.DescendantTrivia().Any(x => x.IsKind(SyntaxKind.SkippedTokensTrivia));
+                
+                kind = NodeKind.Expression;
+                node = SyntaxFactory.ParseExpression(input);
+                if (MayHaveFailed(node))
+                {
+                    kind = NodeKind.Statement;
+                    node = SyntaxFactory.ParseStatement(input);
+                }
+                if (MayHaveFailed(node))
+                {
+                    kind = NodeKind.CompilationUnit;
+                    node = SyntaxFactory.ParseCompilationUnit(input);
+                }
+                break;
+            case "CompilationUnit":
+                kind = NodeKind.CompilationUnit;
+                node = SyntaxFactory.ParseCompilationUnit(input);
+                break;
+            case "Statement":
+                kind = NodeKind.Statement;
+                node = SyntaxFactory.ParseStatement(input);
+                break;
+            case "Expression":
+                kind = NodeKind.Expression;
+                node = SyntaxFactory.ParseExpression(input);
+                break;
+            default:
+                throw new InvalidOperationException();
+        }
+        
+        _result = quoter.Print(quoter.Quote(node));
+        _output.Content = Util.WithStyle(Format(_result,
+            (SyntaxFactoryMethod("MissingToken"), x => Util.Highlight(x.Value, "#ffaaaa")),
+            (SyntaxFactoryMethod("BadToken"), x => Util.Highlight(x.Value, "#ffaaaa")),
+            (SyntaxFactoryMethod("SkippedTokensTrivia"), x => Util.Highlight(x.Value, "#ffaaaa"))
+        ), "font-family: Consolas; font-size: 1.1em");
+        sw.Stop();
+        
+        _commands.Content = Util.WordRun(true,
+            new Button("Copy to clipboard", x => { Copy(); x.Text = "Copied!"; }),
+            new Button("Open in new panel", _ => DumpPanel()),
+            new Button("Open as new query", _ => OpenQuery()),
+            Util.Metatext("quoted as:"),
+            Util.WithStyle(Util.Metatext(kind.ToString()), "font-weight: 600"),
+            Util.Metatext("elapsed:"),
+            Util.WithStyle(Util.Metatext((sw.ElapsedMilliseconds / 1000d).ToString("0.000")), "font-weight: 600"),
+            Util.Metatext("sec.")
+        );
+        return true;
     }
     catch (Exception ex)
     {
         _output.Content = ex;
+        return true;
     }
+    finally
+    {
+        if (Monitor.IsEntered(_gate))
+        {
+            Monitor.Exit(_gate);
+        }
+    }
+}
+
+void Copy()
+{
+    System.Windows.Forms.Clipboard.SetText(_result, System.Windows.Forms.TextDataFormat.UnicodeText);
 }
 
 void DumpPanel()
 {
-    PanelManager.DisplaySyntaxColoredText(_code, SyntaxLanguageStyle.CSharp, "Quote");
+    PanelManager.DisplaySyntaxColoredText(_result, SyntaxLanguageStyle.CSharp, "Quote");
 }
 
 void OpenQuery()
@@ -112,7 +224,7 @@ void OpenQuery()
   <Namespace>Microsoft.CodeAnalysis</Namespace>
 </Query>
 
-{_code}";
+{_result}";
 
     // dirty hack...
     var tmpPath = $"{Path.GetTempFileName()}.linq";
@@ -120,6 +232,37 @@ void OpenQuery()
     Process.Start(typeof(LINQPad.Util).Assembly.Location, tmpPath);
     Thread.Sleep(1000);
     File.Delete(tmpPath);
+}
+
+object Format(string input, params (string pattern, Func<Match, object> selector)[] formatters)
+{
+    var matches = formatters
+        .SelectMany(x => Regex.Matches(input, x.pattern, RegexOptions.Multiline)
+            .Cast<Match>()
+            .Select(match => (match, x.selector))
+        )
+        .OrderBy(x => x.match.Index)
+        .ToArray();
+    if (!matches.Any()) return input;
+
+    var list = new List<object>();
+    var idx = 0;
+    foreach (var (match, selector) in matches)
+    {
+        var leading = input.Substring(idx, match.Index - idx);
+        if (leading.Length > 0)
+        {
+            list.Add(leading);
+        }
+        var obj = selector(match);
+        if (obj != null) list.Add(obj);
+        idx = match.Index + match.Length;
+    }
+    if (idx < input.Length)
+    {
+        list.Add(input.Substring(idx));
+    }
+    return Util.WordRun(false, list);
 }
 
 #region from: https://github.com/KirillOsenkov/RoslynQuoter/blob/master/src/Quoter/Quoter.cs (license: ASLv2) with modification
