@@ -1,5 +1,10 @@
 LINQPad Queries by takeshik (https://github.com/takeshik/linqpad-queries)
-Copyright Â© Takeshi KIRIYA (aka takeshik) <takeshik@tksk.io>
+Copyright © Takeshi KIRIYA (aka takeshik) <takeshik@tksk.io>
+
+    Original code was written by @Grabacr07:
+        https://gist.github.com/Grabacr07/cd86257f9ad8b0c210d11e5dd6c93ce6
+
+MIT License
 
 This software is provided 'as-is', without any express or implied
 warranty. In no event will the authors be held liable for any damages
